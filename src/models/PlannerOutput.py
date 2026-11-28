@@ -8,6 +8,8 @@ class ExamItem(BaseModel):
     subject: str = Field(..., min_length=1, max_length=255)
     exam_date: Date
     exam_time: Time | None = None
+    # The card (subject) this exam belongs to. Sent by the backend; optional.
+    card_id: int | None = Field(default=None, gt=0)
 
     @field_validator("subject")
     @classmethod

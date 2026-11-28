@@ -28,6 +28,10 @@ class ExamEntry(SQLAlchemyBase):
     exam_date = Column(Date, nullable=False)
     exam_time = Column(Time, nullable=True)
 
+    # The card (subject) this exam belongs to. Optional: exams saved before this
+    # column existed, or with no matching card, are planned with neutral weights.
+    card_id = Column(Integer, nullable=True, index=True)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(
         DateTime(timezone=True),

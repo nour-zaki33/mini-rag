@@ -47,6 +47,7 @@ class ExamEntryModel(BaseDataModel):
                             subject=exam["subject"],
                             exam_date=exam["exam_date"],
                             exam_time=exam.get("exam_time"),
+                            card_id=exam.get("card_id"),
                         )
                         for exam in exams
                     ]

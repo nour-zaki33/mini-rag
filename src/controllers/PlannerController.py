@@ -7,6 +7,7 @@ from difflib import get_close_matches
 
 from pydantic import ValidationError
 
+from controllers.PlanOptimizer import optimize_plan
 from controllers.PlanScheduler import build_plan
 from controllers.VisionController import VisionController
 from models.PlannerOutput import ExamItem, Preferences, StudyPlan, UnappliedItem
@@ -211,7 +212,11 @@ class PlannerController:
         return server_today
 
     async def generate_plan(
-        self, exams: list[ExamItem], note: str = "", today: date | None = None
+        self,
+        exams: list[ExamItem],
+        note: str = "",
+        today: date | None = None,
+        stats: dict | None = None,
     ) -> dict:
         today = self._effective_today(today)
         upcoming = [e for e in exams if e.exam_date > today]
@@ -226,19 +231,21 @@ class PlannerController:
 
         try:
             return await asyncio.wait_for(
-                self._generate(upcoming, note, today), timeout=PLAN_TIME_BUDGET
+                self._generate(upcoming, note, today, stats), timeout=PLAN_TIME_BUDGET
             )
         except asyncio.TimeoutError as exc:
             raise PlannerTimeoutError(
                 f"Plan generation took longer than {PLAN_TIME_BUDGET} seconds. Please try again."
             ) from exc
 
-    async def _generate(self, upcoming: list[ExamItem], note: str, today: date) -> dict:
+    async def _generate(
+        self, upcoming: list[ExamItem], note: str, today: date, stats: dict | None = None
+    ) -> dict:
         subjects = list(dict.fromkeys(e.subject for e in upcoming))
         prefs = await self.parse_note(note, subjects)  # the only LLM call (skipped if no note)
         start = today + timedelta(days=prefs.start_in_days)
 
-        result = build_plan(
+        plan_args = dict(
             exams=upcoming,
             hours_per_day=prefs.hours_per_day,
             rest_weekdays=prefs.rest_weekdays,
@@ -246,6 +253,16 @@ class PlannerController:
             start=start,
             max_subjects_per_day=prefs.max_subjects_per_day,
         )
+
+        # The hours are decided by the optimizer (quiz scores + size of each subject).
+        # If it fails for any reason, the rule-based scheduler builds the plan as before.
+        result = None
+        try:
+            result = await asyncio.to_thread(optimize_plan, stats=stats, **plan_args)
+        except Exception:
+            logger.warning("Plan optimizer failed, using the basic scheduler", exc_info=True)
+        if result is None or not result.days:
+            result = build_plan(**plan_args)
         if not result.days:
             raise PlannerInputError(
                 "There is no study day before the exams. Check the rest days and the start day."

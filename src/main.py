@@ -6,7 +6,6 @@ from sqlalchemy.orm import sessionmaker
 
 from routes import base, nlp, chat, board, quiz, planner, projects, auth
 from utils.auth import get_current_user, limit_gemini_usage
-from utils.internal_auth import verify_internal_key, check_internal_key_configured
 from helpers.config import get_settings
 from stores.llm.LLMProviderFactory import LLMProviderFactory
 from stores.vectordb.VectorDBProviderFactory import VectorDBProviderFactory
@@ -20,7 +19,6 @@ setup_metrics(app)
 
 
 async def startup_span():
-    check_internal_key_configured()
     settings = get_settings()
 
     host = settings.POSTGRES_HOST.split("?")[0]
@@ -83,13 +81,13 @@ app.on_event("startup")(startup_span)
 app.on_event("shutdown")(shutdown_span)
 
 app.include_router(base.base_router)
-app.include_router(auth.auth_router, dependencies=[Depends(verify_internal_key)])
-app.include_router(nlp.nlp_router, dependencies=[Depends(verify_internal_key), Depends(limit_gemini_usage)])
-app.include_router(board.board_router, dependencies=[Depends(verify_internal_key), Depends(limit_gemini_usage)])
-app.include_router(chat.chat_router, dependencies=[Depends(verify_internal_key), Depends(limit_gemini_usage)])
-app.include_router(quiz.quiz_router, dependencies=[Depends(verify_internal_key), Depends(limit_gemini_usage)])
-app.include_router(projects.projects_router, dependencies=[Depends(verify_internal_key), Depends(get_current_user)])
-app.include_router(planner.planner_router, dependencies=[Depends(verify_internal_key), Depends(limit_gemini_usage)])
+app.include_router(auth.auth_router)
+app.include_router(nlp.nlp_router, dependencies=[Depends(limit_gemini_usage)])
+app.include_router(board.board_router, dependencies=[Depends(limit_gemini_usage)])
+app.include_router(chat.chat_router, dependencies=[Depends(limit_gemini_usage)])
+app.include_router(quiz.quiz_router, dependencies=[Depends(limit_gemini_usage)])
+app.include_router(projects.projects_router, dependencies=[Depends(get_current_user)])
+app.include_router(planner.planner_router, dependencies=[Depends(limit_gemini_usage)])
 
 app.add_middleware(
     CORSMiddleware,

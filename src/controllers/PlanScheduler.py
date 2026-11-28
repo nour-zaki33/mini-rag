@@ -6,7 +6,7 @@ from datetime import date, timedelta
 from models.PlannerOutput import ExamItem
 from models.enums.PlannerEnums import Weekday
 
-FOCUS_WEIGHT = 1.5
+FOCUS_WEIGHT = 1.3
 EPS = 1e-9
 
 """Builds the study plan in plain Python (no LLM), so the rules always hold:

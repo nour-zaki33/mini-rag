@@ -32,3 +32,5 @@ vine==5.1.0
 flower==2.2.0    
 greenlet
 Pillow
+PyJWT==2.10.1
+scipy>=1.11,<2

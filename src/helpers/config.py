@@ -59,9 +59,6 @@ class Settings(BaseSettings):
 
     GEMINI_API_KEY: str
 
-    # Shared key every API request must send in the X-Internal-Key header
-    INTERNAL_API_KEY: Optional[str] = None
-
     # Auth + usage limits (protect the Gemini key)
     JWT_SECRET: Optional[str] = None
     JWT_EXPIRE_MINUTES: int = 1440

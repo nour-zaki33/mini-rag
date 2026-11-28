@@ -1,6 +1,6 @@
 import logging
 from datetime import date
-from fastapi import APIRouter, File, Form, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from controllers.PlannerController import (
@@ -10,9 +10,11 @@ from controllers.PlannerController import (
 )
 from models.ExamEntryModel import ExamEntryModel
 from models.PlannerOutput import ExamItem
+from models.PlannerStatsModel import PlannerStatsModel
 from models.ProjectModel import ProjectModel
 from models.StudyPlanModel import StudyPlanModel
 from models.enums.PlannerEnums import PlannerSignal
+from utils.auth import require_user_project
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -53,7 +55,10 @@ def _bad_request(signal: PlannerSignal, detail: str):
 def _exam_dicts(rows) -> list[dict]:
     return [
         ExamItem(
-            subject=row.subject, exam_date=row.exam_date, exam_time=row.exam_time
+            subject=row.subject,
+            exam_date=row.exam_date,
+            exam_time=row.exam_time,
+            card_id=row.card_id,
         ).model_dump(mode="json")
         for row in rows
     ]
@@ -95,7 +100,7 @@ async def _project_not_found(request: Request, project_id: int):
     return None
 
 
-@planner_router.post("/extract/{project_id}")
+@planner_router.post("/extract/{project_id}", dependencies=[Depends(require_user_project)])
 async def extract_schedule(
     request: Request,
     project_id: int,
@@ -149,7 +154,7 @@ async def extract_schedule(
         )
 
 
-@planner_router.put("/schedule/{project_id}")
+@planner_router.put("/schedule/{project_id}", dependencies=[Depends(require_user_project)])
 async def save_schedule(request: Request, project_id: int, body: SaveScheduleRequest):
     """Save the reviewed schedule. It replaces the project's previous one."""
     not_found = await _project_not_found(request, project_id)
@@ -169,7 +174,7 @@ async def save_schedule(request: Request, project_id: int, body: SaveScheduleReq
     return _respond(status.HTTP_200_OK, PlannerSignal.SCHEDULE_SAVED, exams=_exam_dicts(rows))
 
 
-@planner_router.get("/schedule/{project_id}")
+@planner_router.get("/schedule/{project_id}", dependencies=[Depends(require_user_project)])
 async def get_schedule(request: Request, project_id: int):
     not_found = await _project_not_found(request, project_id)
     if not_found is not None:
@@ -180,7 +185,7 @@ async def get_schedule(request: Request, project_id: int):
 
     return _respond(status.HTTP_200_OK, PlannerSignal.SCHEDULE_FETCHED, exams=_exam_dicts(rows))
 
-@planner_router.delete("/schedule/{project_id}")
+@planner_router.delete("/schedule/{project_id}", dependencies=[Depends(require_user_project)])
 async def delete_schedule(request: Request, project_id: int):
     """Delete the saved exam schedule and the plan built from it."""
     not_found = await _project_not_found(request, project_id)
@@ -197,7 +202,7 @@ async def delete_schedule(request: Request, project_id: int):
 
     return _respond(status.HTTP_200_OK, PlannerSignal.SCHEDULE_DELETED)
 
-@planner_router.post("/generate/{project_id}")
+@planner_router.post("/generate/{project_id}", dependencies=[Depends(require_user_project)])
 async def generate_plan(request: Request, project_id: int, body: GeneratePlanRequest):
     """Build a study plan from the saved schedule and save it (replaces the old one)."""
     not_found = await _project_not_found(request, project_id)
@@ -210,13 +215,27 @@ async def generate_plan(request: Request, project_id: int, body: GeneratePlanReq
         return _bad_request(PlannerSignal.SCHEDULE_NOT_SAVED, "Save an exam schedule first.")
 
     exams = [
-        ExamItem(subject=r.subject, exam_date=r.exam_date, exam_time=r.exam_time)
+        ExamItem(
+            subject=r.subject, exam_date=r.exam_date, exam_time=r.exam_time, card_id=r.card_id
+        )
         for r in rows
     ]
     controller = get_planner_controller(request)
 
+    # Quiz scores and material size per card. If this fails the plan is still built, without them.
+    stats = {}
     try:
-        result = await controller.generate_plan(exams=exams, note=body.note, today=body.today)
+        stats_model = await PlannerStatsModel.create_instance(db_client=request.app.db_client)
+        stats = await stats_model.get_card_stats(
+            project_id=project_id, card_ids=[e.card_id for e in exams if e.card_id]
+        )
+    except Exception:
+        logger.warning("Could not load study stats, planning without them", exc_info=True)
+
+    try:
+        result = await controller.generate_plan(
+            exams=exams, note=body.note, today=body.today, stats=stats
+        )
 
         plan_model = await StudyPlanModel.create_instance(db_client=request.app.db_client)
         record = await plan_model.save_project_plan(
@@ -255,7 +274,7 @@ async def generate_plan(request: Request, project_id: int, body: GeneratePlanReq
         )
 
 
-@planner_router.get("/plan/{project_id}")
+@planner_router.get("/plan/{project_id}", dependencies=[Depends(require_user_project)])
 async def get_plan(request: Request, project_id: int):
     """The saved plan, or plan=null if none was created yet.
     The plan is deleted once the last exam day has passed."""
@@ -276,7 +295,7 @@ async def get_plan(request: Request, project_id: int):
     return _respond(status.HTTP_200_OK, PlannerSignal.PLAN_FETCHED, **_plan_payload(record))
 
 
-@planner_router.delete("/plan/{project_id}")
+@planner_router.delete("/plan/{project_id}", dependencies=[Depends(require_user_project)])
 async def delete_plan(request: Request, project_id: int):
     not_found = await _project_not_found(request, project_id)
     if not_found is not None:

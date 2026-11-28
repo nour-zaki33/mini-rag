@@ -9,6 +9,7 @@ from sqlalchemy import select
 from types import SimpleNamespace
 from controllers.NLPController import NLPController
 from models.db_schemes.minirag.schemes.quiz import Quiz
+from models.db_schemes.minirag.schemes.quiz_attempt import QuizAttempt
 import time
 
 QUIZ_TIME_BUDGET = 500
@@ -873,12 +874,42 @@ Rules:
                     "explanation": q["explanation"],
                 })
 
+            await self._record_attempt(
+                project_id=project_id,
+                quiz_id=quiz_id,
+                card_id=quiz.card_id,
+                score=score,
+                total=len(quiz.questions),
+            )
+
             return {
                 "quiz_id": quiz_id,
                 "score": score,
                 "total": len(quiz.questions),
                 "details": details,
             }
+
+    async def _record_attempt(
+        self, project_id: int, quiz_id: int, card_id: int, score: int, total: int
+    ) -> None:
+        """Keep the score so the study planner can see weak subjects.
+        Saving it must never break the student's quiz result, so errors are only logged."""
+        if total <= 0:
+            return
+        try:
+            async with self.db_client() as session:
+                async with session.begin():
+                    session.add(
+                        QuizAttempt(
+                            quiz_id=quiz_id,
+                            project_id=project_id,
+                            card_id=card_id,
+                            score=score,
+                            total=total,
+                        )
+                    )
+        except Exception:
+            logger.warning("Could not save the quiz attempt | quiz=%s", quiz_id, exc_info=True)
 
     @staticmethod
     def _source_text_to_documents(source_text: str, max_chars: int = 700) -> list:

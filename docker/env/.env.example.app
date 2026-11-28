@@ -98,11 +98,6 @@ VISION_MODEL_ID="qwen3-vl:2b"
 BOARD_REDIS_URL="redis://:CHANGE_ME_redis@redis:6379/1"
 BOARD_SESSION_TTL=86400
 
-# ========================= Internal API key =========================
-# Every request must send this value in the X-Internal-Key header.
-# The API refuses to start if it is empty or shorter than 32 characters.
-# generate with: python -c "import secrets; print(secrets.token_urlsafe(48))"
-INTERNAL_API_KEY=""
 
 # ========================= Auth / usage limits =========================
 # generate with: python -c "import secrets; print(secrets.token_urlsafe(48))"
